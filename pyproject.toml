@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "erp-intelligent-query"
+version = "0.1.0"
+description = "受控的 ERP 销售数据自然语言查询与快照报告"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.8,<3",
+  "sqlalchemy>=2.0.39,<2.1", "pymysql[rsa]>=1.1,<2", "sqlglot>=26,<30",
+  "httpx>=0.28,<1", "python-docx>=1.1,<2", "playwright>=1.51,<2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.26,<2", "ruff>=0.11,<1"]
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 110
+
