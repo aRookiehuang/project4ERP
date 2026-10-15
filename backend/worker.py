@@ -13,6 +13,7 @@ from sqlalchemy import delete, select, update
 from .app import models as m
 from .app.config import Settings, settings
 from .app.db import engine_for
+from .processes import kill_tree
 
 
 def render_child(payload, format, include_sql, target, settings_dict):
@@ -66,13 +67,15 @@ def process_one(config: Settings):
             args=(job["report"], job["format"], bool(job["include_sql"]), temporary, config.model_dump()),
         )
         process.start()
-        process.join(timeout=60)
-        if process.is_alive():
-            if hasattr(os, "killpg"):
-                os.killpg(process.pid, signal.SIGTERM)
-            else:
-                process.terminate()
-            process.join(timeout=5)
+        try:
+            process.join(timeout=60)
+        finally:
+            if process.is_alive():
+                kill_tree(process.pid)
+                process.join(timeout=3)
+                if process.is_alive():
+                    kill_tree(process.pid, force=True)
+                    process.join(timeout=3)
         success = process.exitcode == 0 and temporary.is_file() and temporary.stat().st_size > 100
         checksum = None
         if success:
@@ -129,6 +132,12 @@ def cleanup(config):
 
 
 def main():
+    def stop(signum, frame):
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, stop)
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, stop)
     parser = argparse.ArgumentParser()
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
@@ -142,4 +151,5 @@ def main():
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

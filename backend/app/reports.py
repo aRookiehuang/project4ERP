@@ -10,6 +10,7 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 from playwright.sync_api import sync_playwright
 
+from backend.browser import browser_launch_options
 from .config import Settings
 
 
@@ -86,7 +87,11 @@ def render_report(payload: dict, format: str, include_sql: bool, output: Path, c
             + ") format('opentype')}"
         )
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = playwright.chromium.launch(
+            **browser_launch_options(
+                channel=config.browser_channel, executable_path=config.browser_executable_path
+            )
+        )
         printable_width = round(((297 if len(payload["columns"]) > 7 else 210) - 24) * 96 / 25.4)
         context = browser.new_context(viewport={"width": printable_width, "height": 1000})
         context.route("**/*", lambda route: route.abort())

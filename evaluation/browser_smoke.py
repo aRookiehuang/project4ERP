@@ -4,8 +4,14 @@ import argparse
 import json
 import os
 from pathlib import Path
+import sys
 
 from playwright.sync_api import expect, sync_playwright
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from backend.app.config import settings
+from backend.browser import browser_launch_options
 
 
 def main():
@@ -16,7 +22,11 @@ def main():
     output = Path("artifacts/browser")
     output.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(
+            **browser_launch_options(
+                channel=settings.browser_channel, executable_path=settings.browser_executable_path
+            )
+        )
         page = browser.new_page(viewport={"width": 1440, "height": 1000})
         failures = []
         page.on("pageerror", lambda exc: failures.append(str(exc)))

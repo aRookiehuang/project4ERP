@@ -1,8 +1,9 @@
-# Verified Python 3.10 environment. Install project separately with pip install -e . --no-deps.
+# Shared Windows/Linux pins; pip selects platform-specific wheels.
+# Install project separately with pip install -e . --no-deps.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
-backports.asyncio.runner==1.2.0
+backports.asyncio.runner==1.2.0; python_version < "3.11"
 certifi==2026.7.22
 cffi==2.1.1
 click==8.5.0
@@ -39,3 +40,5 @@ tomli==2.5.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0
 uvicorn==0.54.0
+tzdata==2026.5
+colorama==0.4.6; sys_platform == "win32"

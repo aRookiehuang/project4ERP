@@ -1,0 +1,40 @@
+name: Windows and Linux
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+        python: ['3.10', '3.11']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install, build and install Chromium
+        run: python manage.py setup --with-system-deps
+      - name: Download project font
+        run: python manage.py assets
+      - name: Backend tests
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then PY=.venv/Scripts/python.exe; else PY=.venv/bin/python; fi
+          "$PY" -m pytest -q
+          "$PY" -m pip check
+      - name: Initialize simulation data
+        run: python manage.py seed
+      - name: Browser, exports and process lifecycle
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then PY=.venv/Scripts/python.exe; else PY=.venv/bin/python; fi
+          "$PY" evaluation/platform_smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidence-${{ matrix.os }}-py${{ matrix.python }}
+          path: artifacts/browser

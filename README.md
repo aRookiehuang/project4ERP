@@ -17,20 +17,29 @@
 
 ## 1. 本机快速启动
 
-需要 Python 3.10+、Node.js 22+。以下命令从仓库根目录执行。
+支持原生 Windows 和 Linux，不要求 Windows 安装 WSL。建议使用 Python 3.11（兼容 3.10）、Node.js 22+；浏览器导出使用 Playwright 支持的系统版本。两种系统共用源码和依赖锁文件，分别安装各自的虚拟环境与 Node 依赖。
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.lock
-python -m pip install -e . --no-deps
-npm ci --prefix frontend
-npm run build --prefix frontend
-python -m backend.seed --orders 3000
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+**Windows（PowerShell / CMD）**，从项目根目录执行：
+
+```powershell
+py -3.11 manage.py setup --skip-browser
+py -3.11 manage.py assets
+py -3.11 manage.py seed --orders 3000
+.venv\Scripts\python.exe manage.py run
 ```
 
-Windows PowerShell 将前两行改为 `py -m venv .venv`、`.venv\Scripts\Activate.ps1`。Linux 缺少 venv 时先安装发行版的 `python3-venv`。
+**Linux（Bash）**，从项目根目录执行：
+
+```bash
+python3 manage.py setup --with-system-deps
+python3 manage.py assets
+python3 manage.py seed --orders 3000
+.venv/bin/python manage.py run
+```
+
+`setup` 安装 Python/前端依赖并构建页面。Windows 自动使用已安装的 Edge 或 Chrome，以上命令跳过浏览器下载；非标准安装位置可在 `.env` 中设置 `BROWSER_EXECUTABLE_PATH`。Linux 默认使用 Playwright Chromium，`--with-system-deps` 会调用系统包管理器，可能需要 sudo；浏览器与系统依赖已齐备时可使用 `setup --skip-browser`。Linux 缺少 venv 时先安装发行版的 `python3-venv`。`assets` 下载项目内中文字体与许可证，不修改系统字体；可以手动放置相同文件。`seed` 只初始化新库，已有数据不要重复执行。
+
+再次启动可用 Windows `scripts\dev.cmd` 或 PowerShell `powershell -ExecutionPolicy Bypass -File scripts\dev.ps1`；Linux 用 `./scripts/dev.sh`。两者都启动 API 与导出 worker，Ctrl+C 一起停止。可追加 `--port 8080` 改端口。直接使用 `.venv` 内 Python 无需激活环境，也无需修改系统 PowerShell 执行策略。
 
 打开 **http://127.0.0.1:8000**。账号 `demo`、`analyst` 为普通用户，`admin` 为管理员；初始密码为 `erp-demo-2026`。可以在初始化前通过 `DEMO_PASSWORD` 设置。初始化不会覆盖已有数据或密码。
 
@@ -40,7 +49,7 @@ Windows PowerShell 将前两行改为 `py -m venv .venv`、`.venv\Scripts\Activa
 
 服务使用**单个 API 工作进程**，同时最多五个查询；请勿添加 `--workers`。会话并发控制与登录限流目前在进程内。
 
-当前工作区已安装依赖并初始化演示数据。Linux/WSL 可直接运行 `./scripts/dev.sh`，同时启动 API 和导出 worker；脚本会识别工作区内的 Node.js 与浏览器系统库。先停止已有 8000 端口服务，避免重复启动。
+跨系统迁移时仅复制源码、配置和所需数据，不要复制 `.venv`、`frontend/node_modules` 或 `.tools`，应在目标系统重新运行 `setup`。统一启动器对被占用端口先报错，不自动终止已有服务。详细配置及验证范围见 [Windows/Linux 部署说明](docs/09-Windows与Linux部署.md)。
 
 ## 2. 模型 API
 
@@ -78,8 +87,16 @@ BUSINESS_DATABASE_URL=mysql+pymysql://query_reader:local-reader-change-me@127.0.
 
 ```bash
 export ERP_SEED_DATABASE_URL='mysql+pymysql://demo_seed:local-seed-change-me@127.0.0.1:3306/erp_demo?charset=utf8mb4'
-python -m backend.seed --orders 100000 --seed 42
+.venv/bin/python manage.py seed --orders 100000 --seed 42
 unset ERP_SEED_DATABASE_URL
+```
+
+Windows PowerShell 对应写法：
+
+```powershell
+$env:ERP_SEED_DATABASE_URL='mysql+pymysql://demo_seed:local-seed-change-me@127.0.0.1:3306/erp_demo?charset=utf8mb4'
+.venv\Scripts\python.exe manage.py seed --orders 100000 --seed 42
+Remove-Item Env:ERP_SEED_DATABASE_URL
 ```
 
 随后由管理员执行 `database/grant-reader.sql`，仅给查询账号六张表的 SELECT 权限。运行服务时不需要初始化账号。应用库账号仅在 `nlq_app` 有权限；业务查询使用独立连接池和只读事务，服务器设置 `MAX_EXECUTION_TIME`。不要将管理员连接串填入 `BUSINESS_DATABASE_URL`。
@@ -88,7 +105,11 @@ unset ERP_SEED_DATABASE_URL
 
 ## 4. Word / PDF 导出
 
-安装 Chromium 及其系统依赖（Linux 的系统依赖安装可能需要管理员权限）：
+完成快速启动中的 `setup` 和 `assets` 后即可导出，无需重复安装。下面手工命令中的 `python` 均指项目虚拟环境：Windows 为 `.venv\Scripts\python.exe`，Linux 为 `.venv/bin/python`。
+
+Windows 默认自动查找已有 Edge / Chrome；也可设置 `BROWSER_CHANNEL=msedge`、`BROWSER_CHANNEL=chrome` 或 `BROWSER_EXECUTABLE_PATH`。测试脚本和导出 worker 使用同一配置。选择方式见 [Playwright 官方说明](https://playwright.dev/python/docs/browsers)。
+
+仅在没有可用浏览器时安装 Chromium 及其系统依赖（Linux 的系统依赖安装可能需要管理员权限）：
 
 ```bash
 python -m playwright install --with-deps chromium
@@ -96,7 +117,7 @@ python -m playwright install --with-deps chromium
 
 下载 [Noto Sans CJK SC Regular](https://github.com/notofonts/noto-cjk/tree/main/Sans/OTF/SimplifiedChinese) 到 `artifacts/fonts/NotoSansCJKsc-Regular.otf`，保留其 [SIL Open Font License](https://github.com/notofonts/noto-cjk/blob/main/Sans/LICENSE)。也可使用 `FONT_PATH` 指向同类中文 OTF 字体。PDF 嵌入中文字体；Word 使用该字体名称，查看 Word 的设备应安装该字体或兼容的中文字体。
 
-另开终端、使用同一环境配置启动工作进程：
+使用 `manage.py run` / `dev.cmd` / `dev.sh` 时已经启动导出 worker，**不要再重复启动**。仅在手工单独运行 Uvicorn 时，另开终端、使用同一环境配置启动工作进程：
 
 ```bash
 python -m backend.worker
@@ -108,6 +129,8 @@ python -m backend.worker
 
 ## 5. 验证
 
+以下 `python` 同样使用项目虚拟环境解释器；无须激活环境，可直接替换成上述完整路径。
+
 ```bash
 python -m pytest -q
 npm run build --prefix frontend
@@ -115,6 +138,8 @@ npm run build --prefix frontend
 python evaluation/browser_smoke.py --exports
 # 五种快照场景 × 两种报告格式，检查完整 Word 表格：
 python evaluation/report_smoke.py
+# 独立检查统一启动器、浏览器、导出与停止（使用 18765 端口）：
+python evaluation/platform_smoke.py
 ```
 
 浏览器脚本保存桌面/移动端截图、Word/PDF 下载及完整渲染耗时到 `artifacts/browser/`。这是规则演示链路验证，不替代真实模型验收。详细评测协议见 [evaluation/README.md](evaluation/README.md) 和原始 [评测方案](docs/04-评测与验收方案.md)。

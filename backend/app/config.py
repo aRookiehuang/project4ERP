@@ -1,13 +1,14 @@
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=ROOT / ".env", env_file_encoding="utf-8", extra="ignore")
     app_database_url: str = "sqlite:///artifacts/app.db"
     business_database_url: str = "sqlite:///artifacts/business.db"
     model_mode: str = "demo"
@@ -33,6 +34,26 @@ class Settings(BaseSettings):
     data_end: str = "2026-11-01"
     chart_js_path: Path = ROOT / "frontend/node_modules/echarts/dist/echarts.min.js"
     font_path: Path = ROOT / "artifacts/fonts/NotoSansCJKsc-Regular.otf"
+    browser_channel: str = ""
+    browser_executable_path: Path | None = None
+
+    @field_validator("app_database_url", "business_database_url", mode="after")
+    @classmethod
+    def absolute_sqlite_path(cls, value: str):
+        url = make_url(value)
+        if url.get_backend_name() == "sqlite" and url.database not in {None, "", ":memory:"}:
+            path = Path(url.database)
+            if not path.is_absolute():
+                path = ROOT / path
+            return url.set(database=path.resolve().as_posix()).render_as_string(hide_password=False)
+        return value
+
+    @field_validator("export_dir", "chart_js_path", "font_path", "browser_executable_path", mode="after")
+    @classmethod
+    def project_path(cls, value: Path | None):
+        if value is None:
+            return None
+        return value.resolve() if value.is_absolute() else (ROOT / value).resolve()
 
 
 settings = Settings()
