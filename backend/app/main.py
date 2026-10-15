@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, update
+from pydantic import Field
 
 from . import auth, models as m
 from .analysis import chart_spec
@@ -19,10 +20,13 @@ from .llm import PlannerAdapter
 from .planner import ChartInput, ExportInput, LoginInput, QueryInput, QueryPlan, StrictModel
 from .query import QueryService, owned, page_payload, snapshot
 from .semantic import catalog
+from .preferences import Preferences
+from .settings_routes import router as settings_router
 
 
 class ConversationInput(StrictModel):
     title: str = "新对话"
+    source_id: str = Field(default="default", min_length=1, max_length=36)
 
 
 def create_app(config: Settings = settings):
@@ -32,6 +36,10 @@ def create_app(config: Settings = settings):
         app.state.db = Database(config)
         app.state.adapter = PlannerAdapter(config)
         app.state.query = QueryService(app.state.db, app.state.adapter, config)
+        m.runtime_settings.create(app.state.db.app, checkfirst=True)
+        m.conversation_sources.create(app.state.db.app, checkfirst=True)
+        app.state.preferences = Preferences(app.state.db.app, config)
+        app.state.source_databases = {}
         # A single API process owns query execution. Interrupted runs cannot stay running forever.
         with app.state.db.app.begin() as conn:
             conn.execute(
@@ -48,9 +56,12 @@ def create_app(config: Settings = settings):
             )
         yield
         await app.state.adapter.close()
+        for database in app.state.source_databases.values():
+            database.close()
         app.state.db.close()
 
     app = FastAPI(title="ERP 智能销售查询", version="0.1.0", lifespan=lifespan)
+    app.include_router(settings_router)
     login_attempts = defaultdict(deque)
 
     @app.middleware("http")
@@ -184,6 +195,7 @@ def create_app(config: Settings = settings):
 
     @app.post("/api/conversations", status_code=201)
     def new_conversation(body: ConversationInput, request: Request, user=Depends(auth.current_user)):
+        request.app.state.preferences.source(body.source_id)
         identifier = str(uuid.uuid4())
         with request.app.state.db.app.begin() as conn:
             conn.execute(
@@ -191,12 +203,23 @@ def create_app(config: Settings = settings):
                     id=identifier, user_id=user["id"], title=body.title[:120], state=[]
                 )
             )
-        return {"id": identifier, "title": body.title[:120]}
+            conn.execute(
+                m.conversation_sources.insert().values(conversation_id=identifier, source_id=body.source_id)
+            )
+        return {"id": identifier, "title": body.title[:120], "source_id": body.source_id}
 
     @app.get("/api/conversations/{identifier}")
     def get_conversation(identifier: str, request: Request, user=Depends(auth.current_user)):
         with request.app.state.db.app.connect() as conn:
             conversation = owned(conn, m.conversations, identifier, user["id"])
+            source_id = (
+                conn.scalar(
+                    select(m.conversation_sources.c.source_id).where(
+                        m.conversation_sources.c.conversation_id == identifier
+                    )
+                )
+                or "default"
+            )
             runs = (
                 conn.execute(
                     select(
@@ -222,11 +245,44 @@ def create_app(config: Settings = settings):
                 except DomainError as exc:
                     message["response"] = {"status": "failed", "code": exc.code, "answer": exc.message}
             messages.append(message)
-        return {"id": identifier, "title": conversation["title"], "messages": messages}
+        return {
+            "id": identifier,
+            "title": conversation["title"],
+            "messages": messages,
+            "source_id": source_id,
+        }
 
     @app.post("/api/conversations/{identifier}/queries")
     async def query(identifier: str, body: QueryInput, request: Request, user=Depends(auth.current_user)):
-        return await request.app.state.query.run(identifier, user["id"], body, request)
+        state = request.app.state
+        with state.db.app.connect() as conn:
+            owned(conn, m.conversations, identifier, user["id"])
+            source_id = (
+                conn.scalar(
+                    select(m.conversation_sources.c.source_id).where(
+                        m.conversation_sources.c.conversation_id == identifier
+                    )
+                )
+                or "default"
+            )
+        model = state.preferences.model(user["id"])
+        if source_id == "default" and (not model or model["mode"] == "server"):
+            return await state.query.run(identifier, user["id"], body, request)
+        selected_config = state.preferences.effective_config(source_id, model)
+        if source_id == "default":
+            database = state.db
+        else:
+            if source_id not in state.source_databases:
+                state.source_databases[source_id] = Database(selected_config, app_engine=state.db.app)
+            database = state.source_databases[source_id]
+        adapter = PlannerAdapter(selected_config)
+        service = QueryService(database, adapter, selected_config)
+        service.active = state.query.active
+        service.slots = state.query.slots
+        try:
+            return await service.run(identifier, user["id"], body, request)
+        finally:
+            await adapter.close()
 
     @app.get("/api/results/{identifier}")
     def get_result(

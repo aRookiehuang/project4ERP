@@ -44,6 +44,28 @@ export interface Message {
 export interface Conversation {
   id: string;
   title: string;
+  source_id?: string;
+}
+export interface DatabaseSource {
+  id: string;
+  name: string;
+  kind: string;
+  database: string;
+  data_start: string;
+  data_end: string;
+}
+export interface ModelSettings {
+  mode: "server" | "demo" | "api";
+  effective_mode: string;
+  base_url: string;
+  model: string;
+  has_api_key: boolean;
+  configured: boolean;
+  timeout_seconds: number;
+}
+export interface Preferences {
+  databases: DatabaseSource[];
+  model: ModelSettings;
 }
 export interface User {
   username: string;

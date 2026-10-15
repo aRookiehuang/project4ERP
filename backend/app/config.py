@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     font_path: Path = ROOT / "artifacts/fonts/NotoSansCJKsc-Regular.otf"
     browser_channel: str = ""
     browser_executable_path: Path | None = None
+    config_key_path: Path = ROOT / "artifacts/config.key"
 
     @field_validator("app_database_url", "business_database_url", mode="after")
     @classmethod
@@ -48,7 +49,9 @@ class Settings(BaseSettings):
             return url.set(database=path.resolve().as_posix()).render_as_string(hide_password=False)
         return value
 
-    @field_validator("export_dir", "chart_js_path", "font_path", "browser_executable_path", mode="after")
+    @field_validator(
+        "export_dir", "chart_js_path", "font_path", "browser_executable_path", "config_key_path", mode="after"
+    )
     @classmethod
     def project_path(cls, value: Path | None):
         if value is None:

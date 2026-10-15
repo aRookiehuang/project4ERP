@@ -18,6 +18,7 @@ def config(tmp_path):
         app_database_url=f"sqlite:///{tmp_path}/app.db",
         business_database_url=f"sqlite:///{tmp_path}/business.db",
         export_dir=tmp_path / "exports",
+        config_key_path=tmp_path / "config.key",
         model_mode="demo",
         demo_password="test-password",
         data_start="2024-11-01",

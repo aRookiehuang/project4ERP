@@ -80,6 +80,12 @@ order_items = Table(
 )
 
 app_meta = MetaData()
+runtime_settings = Table(
+    "runtime_settings",
+    app_meta,
+    Column("id", String(100), primary_key=True),
+    Column("value", Text, nullable=False),
+)
 users = Table(
     "users",
     app_meta,
@@ -104,6 +110,12 @@ conversations = Table(
     Column("title", String(120), nullable=False),
     Column("state", JSON, nullable=False),
     Column("created_at", DateTime, default=datetime.utcnow, nullable=False),
+)
+conversation_sources = Table(
+    "conversation_sources",
+    app_meta,
+    Column("conversation_id", ForeignKey("conversations.id"), primary_key=True),
+    Column("source_id", String(36), nullable=False),
 )
 query_runs = Table(
     "query_runs",

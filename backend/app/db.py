@@ -35,8 +35,9 @@ def engine_for(url: str, *, readonly: bool = False, timeout_ms: int = 1500):
 
 
 class Database:
-    def __init__(self, config: Settings):
-        self.app = engine_for(config.app_database_url)
+    def __init__(self, config: Settings, app_engine=None):
+        self.owns_app = app_engine is None
+        self.app = app_engine if app_engine is not None else engine_for(config.app_database_url)
         self.business = engine_for(
             config.business_database_url, readonly=True, timeout_ms=config.query_timeout_ms
         )
@@ -55,7 +56,8 @@ class Database:
                 conn.exec_driver_sql(f"KILL QUERY {int(connection_id)}")
 
     def close(self):
-        self.app.dispose()
+        if self.owns_app:
+            self.app.dispose()
         self.business.dispose()
         if self.cancel:
             self.cancel.dispose()

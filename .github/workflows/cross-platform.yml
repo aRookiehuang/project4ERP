@@ -33,8 +33,11 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = Windows ]; then PY=.venv/Scripts/python.exe; else PY=.venv/bin/python; fi
           "$PY" evaluation/platform_smoke.py
+          "$PY" evaluation/settings_smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: evidence-${{ matrix.os }}-py${{ matrix.python }}
-          path: artifacts/browser
+          path: |
+            artifacts/browser
+            artifacts/settings/*.png

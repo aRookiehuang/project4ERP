@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from "vue";
 import { api, setCsrf } from "./api";
-import type { Conversation, Message, Result, User } from "./types";
+import type { Conversation, Message, Result, User, Preferences } from "./types";
 import ResultCard from "./components/ResultCard.vue";
+import SettingsPanel from "./components/SettingsPanel.vue";
 
 const user = ref<User | null>(null);
 const username = ref("demo");
@@ -14,6 +15,11 @@ const messages = ref<Message[]>([]);
 const question = ref("");
 const error = ref("");
 const busy = ref(false);
+const preferences = ref<Preferences>();
+const sourceId = ref("default");
+const showSettings = ref(false);
+const currentSource = computed(() => preferences.value?.databases.find(d => d.id === sourceId.value));
+const modelMode = computed(() => preferences.value?.model.effective_mode || health.value?.model_mode);
 const loginBusy = ref(false);
 const health = ref<{
   model_mode: string;
@@ -61,6 +67,11 @@ async function bootstrap() {
 }
 async function loadConversations() {
   conversations.value = await api<Conversation[]>("/conversations");
+  await loadSettings();
+}
+async function loadSettings() {
+  try { preferences.value = await api<Preferences>("/settings"); }
+  catch (e) { error.value = e instanceof Error ? e.message : String(e); }
 }
 async function login() {
   loginBusy.value = true;
@@ -86,21 +97,26 @@ async function logout() {
   selected.value = "";
   messages.value = [];
   setCsrf("");
+  preferences.value = undefined;
+  sourceId.value = "default";
+  showSettings.value = false;
 }
 function newConversation() {
+  if (busy.value) return;
   selected.value = "";
   messages.value = [];
   error.value = "";
   sidebarOpen.value = false;
 }
 async function choose(id: string) {
+  if (busy.value) return;
   selected.value = id;
   messages.value = [];
   error.value = "";
   sidebarOpen.value = false;
   try {
-    const data = await api<{ messages: Message[] }>(`/conversations/${id}`);
-    if (selected.value === id) messages.value = data.messages;
+    const data = await api<{ messages: Message[]; source_id: string }>(`/conversations/${id}`);
+    if (selected.value === id) { messages.value = data.messages; sourceId.value = data.source_id; }
   } catch (e) {
     error.value = String(e);
   }
@@ -122,6 +138,7 @@ async function send() {
     if (!conversationId) {
       const created = await api<Conversation>("/conversations", "POST", {
         title: text.slice(0, 40),
+        source_id: sourceId.value,
       });
       conversationId = created.id;
       selected.value = created.id;
@@ -271,13 +288,18 @@ onMounted(bootstrap);
       </nav>
       <div class="sidebar-bottom">
         <div class="source-card">
-          <span class="source-dot"></span><strong>ERP 销售演示库</strong>
-          <p>模拟数据 · {{ health?.database?.toUpperCase() }}</p>
+          <label for="database-source">查询数据库</label>
+          <select id="database-source" v-model="sourceId" :disabled="busy || !!selected" style="width: 100%; margin: 10px 0; padding: 8px; border-radius: 6px">
+            <option v-for="source in preferences?.databases" :key="source.id" :value="source.id">{{ source.name }} · {{ source.kind.toUpperCase() }}</option>
+          </select>
+          <p>{{ currentSource?.database }}</p>
           <small
-            >{{ health?.data_coverage?.[0] }} — {{ health?.data_coverage?.[1]
+            >{{ currentSource?.data_start }} — {{ currentSource?.data_end
             }}<br />结束日期不含在内</small
           >
+          <p v-if="selected"><small>切换数据库请新建会话。</small></p>
         </div>
+        <button :disabled="busy" @click="showSettings = true">数据库与模型设置</button>
         <div v-if="user.role === 'admin'" class="admin-actions">
           <button @click="admin('semantic-catalog')">语义目录</button
           ><button @click="admin('audit')">查询审计</button>
@@ -303,11 +325,11 @@ onMounted(bootstrap);
         </button>
         <div><span class="breadcrumb">工作空间 /</span> {{ title }}</div>
         <span
-          :class="['mode-badge', { demo: health?.model_mode === 'demo' }]"
+          :class="['mode-badge', { demo: modelMode === 'demo' }]"
           >{{
-            health?.model_mode === "demo"
+            modelMode === "demo"
               ? "规则演示模式"
-              : health?.model_configured
+              : preferences?.model.configured
                 ? "模型 API 模式"
                 : "模型待配置"
           }}</span
@@ -428,13 +450,14 @@ onMounted(bootstrap);
         </form>
         <p class="composer-note">
           {{
-            health?.model_mode === "demo"
+            modelMode === "demo"
               ? "当前使用有限规则解析器；配置模型 API 后可使用更灵活的自然语言查询。"
               : "答案依据数据库结果生成。请核对时间范围与指标口径。"
           }}
         </p>
       </div>
     </main>
+    <SettingsPanel v-if="showSettings" :role="user.role" @close="showSettings = false" @changed="loadSettings" />
     <div
       v-if="showAdmin"
       class="modal-backdrop"
