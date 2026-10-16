@@ -76,14 +76,34 @@ MODEL_API_KEY=在本机填写密钥
 
 ### 推荐：交互式一键初始化
 
-MySQL 服务已经安装并启动、项目已执行过 `manage.py setup` 时，在项目根目录运行：
+先确保 MySQL 服务已经安装并启动。按运行项目的系统选择下面的入口，用户名和密码均在运行时按提示输入。
+
+**Windows（原生运行，不使用 WSL）**
+
+首次使用，在项目根目录打开 PowerShell 或 CMD 安装项目环境；已经安装过可跳过：
+
+```powershell
+py -3.11 manage.py setup --skip-browser
+```
+
+随后直接双击 [`scripts/mysql-init.cmd`](scripts/mysql-init.cmd)，或在项目根目录的终端执行：
+
+```powershell
+.\scripts\mysql-init.cmd
+```
+
+脚本会使用项目的 Windows Python 环境，执行建库、生成数据和配置连接，完成或报错后停留在窗口等待按键，方便查看结果。也可以使用等价命令 `py manage.py mysql-init`。不需要激活虚拟环境或修改 PowerShell 执行策略。MySQL 和项目都在当前 Windows 电脑上时，主机通常填写 `127.0.0.1`。
+
+**WSL / Linux**
+
+项目已执行过 `python3 manage.py setup` 时，在项目根目录运行：
 
 ```bash
 # WSL / Linux 终端
 python3 manage.py mysql-init
 ```
 
-Windows PowerShell 使用 `py manage.py mysql-init`。从文件资源管理器打开的终端如果提示符以 `PS` 开头，当前仍是 PowerShell；使用 WSL 项目时，先输入 `wsl`，再执行 `cd /home/hcy/projects/erp` 和上面的 Linux 命令。无需手动选择 `.venv` 内的 Python。
+从文件资源管理器打开的终端如果提示符以 `PS` 开头，当前仍是 PowerShell；使用 WSL 项目时，先输入 `wsl`，再进入项目目录（例如 `cd /home/hcy/projects/erp`）执行上面的 Linux 命令。无需手动选择 `.venv` 内的 Python。Windows 和 WSL 的 `.venv` 不能共用；原生 Windows 运行请使用 Windows 项目副本并在 Windows 中执行 `setup`。
 
 按提示填写 MySQL 主机、端口、用户名、密码、业务库名、应用库名和订单数量。初始化账号须有建库、创建用户及授权权限，通常使用自己的 MySQL `root` 账号。密码隐藏输入，支持 `@` 等特殊字符，不需要自己拼接连接串。WSL 中连接 Windows 上的 MySQL 时，主机需要填写从 WSL 可访问的 Windows 地址。
 
