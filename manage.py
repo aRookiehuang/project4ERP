@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
 import shutil
 import signal
 import socket
@@ -12,6 +11,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
@@ -100,8 +100,8 @@ def assets():
 
 
 def run(args):
-    from backend.processes import process_group_options, stop_child
     from backend.app.config import settings
+    from backend.processes import process_group_options, stop_child
 
     if not (ROOT / "frontend/dist/index.html").is_file():
         raise RuntimeError("Frontend is not built. Run manage.py setup first.")
@@ -151,6 +151,7 @@ def main():
     seed.add_argument("--orders", type=int, default=3000)
     seed.add_argument("--seed", type=int, default=42)
     seed.add_argument("--app-only", action="store_true")
+    commands.add_parser("mysql-init", help="交互式创建 MySQL 数据库、模拟数据和连接配置")
     serve = commands.add_parser("run")
     serve.add_argument("--port", type=int, default=int(os.environ.get("ERP_PORT", "8000")))
     args = parser.parse_args()
@@ -160,6 +161,10 @@ def main():
             setup(args)
         elif args.command == "assets":
             assets()
+        elif args.command == "mysql-init":
+            if not venv_python().is_file():
+                raise RuntimeError("请先运行 python3 manage.py setup --skip-browser（Windows 用 py）。")
+            execute([venv_python(), "-m", "backend.mysql_init"])
         elif args.command == "seed":
             execute(
                 [
