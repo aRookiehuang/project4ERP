@@ -154,6 +154,10 @@ class QueryPlan(StrictModel):
         ):
             raise DomainError("OUT_OF_SCOPE", "销售占比需要一个分组维度和销售额指标，暂不支持 HAVING。")
         allowed_sort = set(self.metrics + self.dimensions)
+        allowed_sort |= {
+            d + "_id" for d in self.dimensions
+            if d in {"customer", "product", "category", "salesperson"}
+        }
         if self.intent == "detail":
             allowed_sort |= {"paid_amount", "created_at", "paid_at", "id"}
         if any(s.field not in allowed_sort for s in self.sort):

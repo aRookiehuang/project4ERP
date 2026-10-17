@@ -12,3 +12,4 @@ artifacts/*
 !artifacts/.gitkeep
 playwright-report/
 test-results/
+实验报告.md

@@ -206,6 +206,7 @@ def compile_query(plan: QueryPlan, dialect: str = "mysql") -> CompiledQuery:
             sort_fields[d] = expr
             if d in id_expr:
                 projections.append(id_expr[d].label(d + "_id"))
+                sort_fields[d + "_id"] = id_expr[d]
                 groups.append(id_expr[d])
                 stable.append(id_expr[d])
                 columns.append(

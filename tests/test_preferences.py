@@ -163,7 +163,9 @@ def test_saved_model_is_used_for_real_query_and_connection_test(client, monkeypa
     conv = client.post("/api/conversations", json={}).json()["id"]
     response = client.post(
         f"/api/conversations/{conv}/queries",
-        json={"question": "九月营收如何", "idempotency_key": str(uuid.uuid4())},
+        # This test checks model routing, not permission to invent a missing year/metric.
+        # Ambiguous input is now covered by the request-policy clarification tests.
+        json={"question": "2026年9月销售额是多少", "idempotency_key": str(uuid.uuid4())},
     )
     assert response.status_code == 200, response.text
     assert response.json()["versions"]["mode"] == "api"

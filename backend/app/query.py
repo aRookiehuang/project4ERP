@@ -15,6 +15,7 @@ from .cancellation import QueryCancellation
 from .compiler import compile_query
 from .errors import DomainError
 from .planner import Condition, FilterGroup, QueryInput
+from .request_policy import clarify_known_ambiguity, enforce_request_semantics, reject_unsafe_request
 from .semantic import METRICS, VERSION
 
 
@@ -64,6 +65,26 @@ class QueryService:
             for condition in plan.filters.leaves():
                 if cancelled.is_set():
                     raise DomainError("QUERY_CANCELLED", "查询已取消。", 499)
+                if condition.field in {"sales_region", "customer_region"} and condition.op in {"eq", "ne", "in"}:
+                    column = m.orders.c.sales_region if condition.field == "sales_region" else m.customers.c.region
+                    values = condition.value if condition.op == "in" else [condition.value]
+                    # Resolve only a verified alias. Exact stored values always take precedence;
+                    # do not blindly strip suffixes from arbitrary business region names.
+                    candidates = {
+                        value: value[:-2] for value in values
+                        if isinstance(value, str) and value.endswith("地区") and len(value) > 2
+                    }
+                    if candidates:
+                        probes = list(set(candidates) | set(candidates.values()))
+                        existing = set(conn.execute(select(column).where(column.in_(probes)).distinct()).scalars())
+                        resolved = [
+                            candidates[v] if v in candidates and v not in existing and candidates[v] in existing else v
+                            for v in values
+                        ]
+                        replacements[id(condition)] = condition.model_copy(
+                            update={"value": resolved if condition.op == "in" else resolved[0]}
+                        )
+                    continue
                 if condition.field not in entities:
                     continue
                 if condition.op != "eq":
@@ -199,6 +220,7 @@ class QueryService:
 
             async def pipeline():
                 question = body.question
+                reject_unsafe_request(question)
                 state = conversation["state"]
                 if body.clarification_ref:
                     with self.db.app.connect() as conn:
@@ -209,17 +231,22 @@ class QueryService:
                     ):
                         raise DomainError("INVALID_PLAN", "澄清引用不属于当前会话的待澄清问题。", 422)
                     question = prior["question"] + "；用户补充：" + question
+                clarify_known_ambiguity(question, state[-5:])
                 llm_start = time.perf_counter()
                 plan, model_info = await self.adapter.plan(
                     question, state[-5:], datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
                 )
+                plan = enforce_request_semantics(question, plan, state[-5:])
                 timing = {"llm_ms": round((time.perf_counter() - llm_start) * 1000, 2)}
                 if plan.action != "query":
                     return {
                         "status": "needs_clarification" if plan.action == "clarify" else "unsupported",
                         "query_id": query_id,
                         "question": body.question,
-                        "answer": plan.clarification or "请补充查询条件。",
+                        "answer": plan.clarification or (
+                            "请补充查询条件。" if plan.action == "clarify"
+                            else "该请求超出已授权的销售分析范围，不支持执行。"
+                        ),
                     }, None
                 plan = plan.validated((self.config.data_start, self.config.data_end))
                 data, compiled, db_timing = await asyncio.to_thread(self.execute, plan, cancelled)
@@ -245,7 +272,7 @@ class QueryService:
                     "versions": {
                         "semantic": VERSION,
                         "data": self.config.data_version,
-                        "prompt": "v1",
+                        "prompt": "v2-request-policy",
                         **model_info,
                     },
                     "timing": timing,
